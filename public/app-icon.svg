@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Anecdotia</title>
+  <desc id="desc">A bound memory notebook with linked family story marks.</desc>
+  <rect width="512" height="512" rx="112" fill="#21483f"/>
+  <path d="M150 118c0-18 15-33 33-33h179c22 0 40 18 40 40v270c0 18-15 32-33 32H183c-18 0-33-14-33-32V118Z" fill="#f8fbf9"/>
+  <path d="M150 126c0-23 19-41 42-41h18v342h-27c-18 0-33-14-33-32V126Z" fill="#e0f0ea"/>
+  <path d="M221 154h115M221 205h91M221 256h121" stroke="#21483f" stroke-width="22" stroke-linecap="round"/>
+  <circle cx="228" cy="333" r="23" fill="#d85b6f"/>
+  <circle cx="292" cy="333" r="23" fill="#347f91"/>
+  <circle cx="356" cy="333" r="23" fill="#d8a33d"/>
+  <path d="M251 333h18M315 333h18" stroke="#21483f" stroke-width="10" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,39 @@
+{
+  "name": "anecdotia",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Anecdotia mini PWA pilot for family story capture.",
+  "author": "Juan O",
+  "homepage": "https://anecdotia.entitybuilders.com",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/juanobrach/entity-builders.git"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "pilot:data:sync": "node scripts/sync-private-pilot-data.mjs",
+    "deploy:prod": "npm run build -- --mode production && npx wrangler deploy"
+  },
+  "dependencies": {
+    "@eb-packages/analytics": "1.0.0",
+    "@eb-packages/app-registry": "workspace:*",
+    "@eb-packages/ui-web": "workspace:*",
+    "lucide-react": "^0.564.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^4.2.1",
+    "typescript": "^5.2.2",
+    "vite": "^5.1.6",
+    "vite-plugin-pwa": "^1.3.0",
+    "vitest": "^2.1.9",
+    "wrangler": "^4.90.0"
+  }
+}
