@@ -5,6 +5,8 @@ export type VisibilityMode =
 
 export type PersonStatus = 'living' | 'deceased' | 'unknown';
 
+export type StorySubjectType = 'person' | 'multiple_people' | 'topic';
+
 export type PilotCircle = {
   id: string;
   displayName: string;
@@ -27,6 +29,10 @@ export type PilotStory = {
   text: string;
   personIds: string[];
   visibility: VisibilityMode;
+  subjectType?: StorySubjectType;
+  primaryPersonId?: string;
+  topicLabel?: string;
+  isSensitive?: boolean;
   sourceLabel: string;
   source: StorySource;
   createdAt: string;
@@ -51,4 +57,8 @@ export type DraftStory = {
   text: string;
   personIds: string[];
   visibility: VisibilityMode | null;
+  subjectType: StorySubjectType | null;
+  primaryPersonId: string | null;
+  topicLabel: string;
+  isSensitive: boolean;
 };

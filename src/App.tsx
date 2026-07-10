@@ -1,21 +1,31 @@
 import {
   ArrowLeft,
   ArrowRight,
+  Archive,
   BookOpen,
   Check,
   Clipboard,
+  GitBranch,
+  HeartHandshake,
   Home,
   Lock,
+  Menu,
   MessageCircle,
   Mic2,
   PenLine,
   Plus,
   Search,
   Share2,
+  ShieldCheck,
+  Sparkles,
+  Tag,
   UserRound,
   Users,
 } from 'lucide-react';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import type { RefObject } from 'react';
+import landingCollageBoard from './assets/landing-collage-board.jpg';
+import landingPeopleCard from './assets/landing-people-card.jpg';
 import { loadPilotData } from './data/pilotData';
 import {
   loadLocalPeople,
@@ -26,10 +36,12 @@ import {
 import { findMentionedPeople } from './domain/peopleMatcher';
 import type {
   DraftStory,
+  PilotCircle,
   PersonSuggestion,
   PilotData,
   PilotPerson,
   PilotStory,
+  StorySubjectType,
   VisibilityMode,
 } from './domain/types';
 import { analytics, trackAnecdotiaEvent } from './services/analytics';
@@ -38,6 +50,7 @@ type AppView =
   | 'landing'
   | 'capture'
   | 'people'
+  | 'subject'
   | 'visibility'
   | 'saved'
   | 'library'
@@ -57,10 +70,23 @@ type VisibilityOption = {
   icon: typeof Lock;
 };
 
+type NarratorState =
+  | 'idle'
+  | 'prompting'
+  | 'listening'
+  | 'thinking'
+  | 'privacy'
+  | 'success'
+  | 'map';
+
 const EMPTY_DRAFT: DraftStory = {
   text: '',
   personIds: [],
   visibility: null,
+  subjectType: null,
+  primaryPersonId: null,
+  topicLabel: '',
+  isSensitive: false,
 };
 
 const PROMPTS: Prompt[] = [
@@ -102,6 +128,47 @@ const VISIBILITY_OPTIONS: VisibilityOption[] = [
   },
 ];
 
+const NARRATOR_COPY: Record<
+  NarratorState,
+  { eyebrow: string; title: string; body: string }
+> = {
+  idle: {
+    eyebrow: 'Lino acompaña',
+    title: 'Un lugar para cuidar historias',
+    body: 'Te ayudo a empezar por una memoria simple, sin armar un árbol entero.',
+  },
+  prompting: {
+    eyebrow: 'Lino pregunta',
+    title: 'Me contás una historia?',
+    body: 'Puede ser una frase, una comida, una travesura, un viaje o algo que siempre vuelve.',
+  },
+  listening: {
+    eyebrow: 'Lino escucha',
+    title: 'Escribí a tu manera',
+    body: 'Podés corregir antes de guardar. La historia queda con tu voz.',
+  },
+  thinking: {
+    eyebrow: 'Lino ordena',
+    title: 'Veamos a quiénes nombra',
+    body: 'Confirmá personas, agregá a quien falte y después elegimos de qué trata más.',
+  },
+  privacy: {
+    eyebrow: 'Lino cuida',
+    title: 'Antes de guardarla, elegí quién la ve',
+    body: 'Algunas historias son para toda la familia; otras necesitan un círculo más chico.',
+  },
+  success: {
+    eyebrow: 'Lino guardó',
+    title: 'Ya forma parte del álbum',
+    body: 'Ahora podés ver cómo se conecta o contar otra mientras la memoria está fresca.',
+  },
+  map: {
+    eyebrow: 'Lino muestra',
+    title: 'Historias conectadas por personas',
+    body: 'El mapa se abre desde una persona o una historia para que no sea una nube difícil de leer.',
+  },
+};
+
 const formatDate = (isoDate: string): string =>
   new Intl.DateTimeFormat('es-AR', {
     day: '2-digit',
@@ -131,6 +198,39 @@ const createPersonId = (name: string): string =>
     .replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '')}-${Date.now()}`;
+
+const resolveSubject = (
+  draft: DraftStory,
+): {
+  subjectType: StorySubjectType;
+  primaryPersonId?: string;
+  topicLabel?: string;
+} => {
+  if (draft.subjectType === 'topic' && draft.topicLabel.trim()) {
+    return {
+      subjectType: 'topic',
+      topicLabel: draft.topicLabel.trim(),
+    };
+  }
+
+  if (draft.subjectType === 'person' && draft.primaryPersonId) {
+    return {
+      subjectType: 'person',
+      primaryPersonId: draft.primaryPersonId,
+    };
+  }
+
+  if (draft.personIds.length === 1) {
+    return {
+      subjectType: 'person',
+      primaryPersonId: draft.personIds[0],
+    };
+  }
+
+  return {
+    subjectType: 'multiple_people',
+  };
+};
 
 function App() {
   const [pilotData, setPilotData] = useState<PilotData | null>(null);
@@ -245,7 +345,7 @@ function App() {
     setDraftError('');
     setShareStatus('');
     setSelectedPromptId(promptId || null);
-    setView('landing');
+    setView('capture');
     window.requestAnimationFrame(focusStoryInput);
     trackAnecdotiaEvent('story_started', {
       source: promptId ? 'post_submit_prompt' : 'family_landing',
@@ -329,11 +429,63 @@ function App() {
     }));
   };
 
-  const continueToVisibility = () => {
+  const continueToSubject = () => {
+    const selectedIds = draft.personIds;
+    const nextSubjectType =
+      draft.subjectType ||
+      (selectedIds.length === 1 ? 'person' : 'multiple_people');
+    const nextPrimaryPersonId =
+      draft.primaryPersonId ||
+      (selectedIds.length === 1 ? selectedIds[0] : null);
+
     trackAnecdotiaEvent('suggested_people_confirmed', {
       linked_people_count: draft.personIds.length,
       suggestion_count: suggestions.length,
     });
+
+    setDraft((current) => ({
+      ...current,
+      subjectType: nextSubjectType,
+      primaryPersonId:
+        nextSubjectType === 'person' ? nextPrimaryPersonId : null,
+    }));
+    setView('subject');
+  };
+
+  const selectPersonSubject = (personId: string) => {
+    setDraft((current) => ({
+      ...current,
+      subjectType: 'person',
+      primaryPersonId: personId,
+      topicLabel: '',
+    }));
+  };
+
+  const selectMultipleSubject = () => {
+    setDraft((current) => ({
+      ...current,
+      subjectType: 'multiple_people',
+      primaryPersonId: null,
+      topicLabel: '',
+    }));
+  };
+
+  const updateTopicSubject = (topicLabel: string) => {
+    setDraft((current) => ({
+      ...current,
+      subjectType: 'topic',
+      primaryPersonId: null,
+      topicLabel,
+    }));
+  };
+
+  const continueToVisibility = () => {
+    if (draft.subjectType === 'topic' && !draft.topicLabel.trim()) {
+      setDraftError('Poné una palabra o frase para nombrar el tema.');
+      return;
+    }
+
+    setDraftError('');
     setView('visibility');
   };
 
@@ -344,43 +496,19 @@ function App() {
     });
   };
 
-  const saveQuickDraft = () => {
-    if (draft.text.trim().length < 24) {
-      setDraftError('Contá un poco más para guardar una historia útil.');
-      focusStoryInput();
-      return;
-    }
-
-    const linkedPersonIds =
-      draft.personIds.length > 0
-        ? draft.personIds
-        : suggestions.map((suggestion) => suggestion.person.localId);
-    const visibility = draft.visibility || 'family-circle';
-    const story = saveLocalStory({
-      text: draft.text,
-      personIds: linkedPersonIds,
-      visibility,
+  const toggleSensitiveMemory = () => {
+    setDraft((current) => {
+      const isSensitive = !current.isSensitive;
+      return {
+        ...current,
+        isSensitive,
+        visibility:
+          isSensitive &&
+          (!current.visibility || current.visibility === 'family-circle')
+            ? 'selected-members'
+            : current.visibility,
+      };
     });
-
-    setLocalStories((current) => [story, ...current]);
-    setLastSavedStory(story);
-    setDraft(EMPTY_DRAFT);
-    setSelectedPromptId(null);
-    setDraftError('');
-    setShareStatus('');
-    setView('saved');
-
-    trackAnecdotiaEvent('story_saved', {
-      visibility: story.visibility,
-      linked_people_count: story.personIds.length,
-      text_length_bucket: bucketTextLength(story.text),
-    });
-
-    if (story.personIds.length > 0) {
-      trackAnecdotiaEvent('person_linked', {
-        linked_people_count: story.personIds.length,
-      });
-    }
   };
 
   const saveDraft = () => {
@@ -389,8 +517,13 @@ function App() {
       return;
     }
 
+    const subject = resolveSubject(draft);
     const story = saveLocalStory({
+      isSensitive: draft.isSensitive,
+      primaryPersonId: subject.primaryPersonId,
+      subjectType: subject.subjectType,
       text: draft.text,
+      topicLabel: subject.topicLabel,
       personIds: draft.personIds,
       visibility: draft.visibility,
     });
@@ -403,6 +536,8 @@ function App() {
     setView('saved');
 
     trackAnecdotiaEvent('story_saved', {
+      is_sensitive: story.isSensitive,
+      subject_type: story.subjectType,
       visibility: story.visibility,
       linked_people_count: story.personIds.length,
       text_length_bucket: bucketTextLength(story.text),
@@ -472,6 +607,15 @@ function App() {
     }
   };
 
+  const handleLandingPrimaryAction = () => {
+    if (draft.text.trim().length > 0) {
+      reviewPeople();
+      return;
+    }
+
+    focusStoryInput();
+  };
+
   if (!pilotData && !loadError) {
     return (
       <main className="anecdotia-app">
@@ -501,156 +645,45 @@ function App() {
   }
 
   return (
-    <main className="anecdotia-app">
-      <header className="app-topbar">
-        <button
-          aria-label="Volver al inicio"
-          className="brand-button"
-          type="button"
-          onClick={() => setView('landing')}
-        >
-          <BookOpen aria-hidden="true" />
-          <span>Anecdotia</span>
-        </button>
-        <div className="topbar-meta">
-          <span>{pilotData.circle.displayName}</span>
-          <span>{visibleStories.length} historias</span>
-        </div>
-      </header>
+    <main className={view === 'landing' ? 'anecdotia-app landing-app' : 'anecdotia-app'}>
+      {view !== 'landing' && (
+        <header className="app-topbar">
+          <button
+            aria-label="Volver al inicio"
+            className="brand-button"
+            type="button"
+            onClick={() => setView('landing')}
+          >
+            <BookOpen aria-hidden="true" />
+            <span>Anecdotia</span>
+          </button>
+          <div className="topbar-meta">
+            <span>{pilotData.circle.displayName}</span>
+            <span>{visibleStories.length} historias</span>
+          </div>
+        </header>
+      )}
 
       {view === 'landing' && (
-        <section className="landing-grid compact-flow">
-          <div className="story-entry-panel">
-            <div className="landing-copy">
-              <p className="eyebrow">Anecdotia</p>
-              <h1>Contá algo que no se debería perder.</h1>
-              <p className="lead">
-                Puede ser una frase, una comida, una travesura o una historia que siempre vuelve.
-              </p>
-            </div>
-
-            <div className="prompt-row" aria-label="Ideas para empezar">
-              {PROMPTS.map((prompt) => (
-                <button
-                  className={selectedPromptId === prompt.id ? 'prompt-chip active' : 'prompt-chip'}
-                  key={prompt.id}
-                  type="button"
-                  onClick={() => selectPrompt(prompt)}
-                >
-                  {prompt.label}
-                </button>
-              ))}
-            </div>
-
-            <textarea
-              aria-describedby={draftError ? 'draft-error' : 'draft-hint'}
-              aria-invalid={Boolean(draftError)}
-              aria-label="Contar una anécdota"
-              autoComplete="off"
-              className="story-textarea landing-textarea"
-              name="story-text"
-              onChange={(event) => updateDraftText(event.target.value)}
-              placeholder={
-                selectedPromptId
-                  ? PROMPTS.find((prompt) => prompt.id === selectedPromptId)?.body
-                  : 'Tocá acá y escribí o dictá con el micrófono del teclado…'
-              }
-              ref={textAreaRef}
-              value={draft.text}
-            />
-
-            <div className="entry-actions">
-              <button className="primary-button talk-button" type="button" onClick={startDictation}>
-                <Mic2 aria-hidden="true" />
-                Hablar o escribir
-              </button>
-              <button className="secondary-button" type="button" onClick={saveQuickDraft}>
-                <Check aria-hidden="true" />
-                Guardar
-              </button>
-            </div>
-
-            <div className="textarea-footer">
-              <span aria-live="polite" id={draftError ? 'draft-error' : 'draft-hint'}>
-                {draftError || 'El botón abre el teclado; después tocá el micrófono del celular si preferís dictar.'}
-              </span>
-              <span>{draft.text.trim().length} caracteres</span>
-            </div>
-
-            <div className="quick-visibility" aria-label="Privacidad">
-              {VISIBILITY_OPTIONS.slice(0, 2).map((option) => (
-                <button
-                  className={
-                    (draft.visibility || 'family-circle') === option.id
-                      ? 'prompt-chip active'
-                      : 'prompt-chip'
-                  }
-                  key={option.id}
-                  type="button"
-                  onClick={() => selectVisibility(option.id)}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-
-            {(suggestions.length > 0 || selectedPeople.length > 0) && (
-              <div className="suggested-people" aria-label="Personas detectadas">
-                <p className="section-label">Personas</p>
-                <div className="selected-people">
-                  {(selectedPeople.length > 0
-                    ? selectedPeople
-                    : suggestions.map((suggestion) => suggestion.person)
-                  ).map((person) => (
-                    <button
-                      className="person-pill selected"
-                      key={person.localId}
-                      type="button"
-                      onClick={() => togglePerson(person.localId)}
-                    >
-                      <Check aria-hidden="true" />
-                      {person.displayName}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          <div className="memory-strip" aria-label="Historias recientes">
-            <div className="section-row">
-              <p className="section-label">Para inspirarse</p>
-              {visibleStories.length > 0 && (
-                <button className="ghost-button compact-action" type="button" onClick={() => setView('library')}>
-                  Ver todas
-                </button>
-              )}
-            </div>
-            {visibleStories.slice(0, 2).map((story) => (
-              <button
-                className="story-card"
-                key={story.id}
-                type="button"
-                onClick={() => openStory(story.id)}
-              >
-                <span className="story-card-date">{formatDate(story.createdAt)}</span>
-                <strong>{story.title}</strong>
-                <span>{story.text}</span>
-              </button>
-            ))}
-            {visibleStories.length === 0 && (
-              <div className="empty-state">
-                <BookOpen aria-hidden="true" />
-                <h2>Podés empezar con algo corto</h2>
-                <p>Una frase familiar alcanza.</p>
-              </div>
-            )}
-          </div>
-        </section>
+        <LandingExperience
+          circle={pilotData.circle}
+          draft={draft}
+          draftError={draftError}
+          people={allPeople}
+          selectedPromptId={selectedPromptId}
+          textAreaRef={textAreaRef}
+          onFocusStoryInput={focusStoryInput}
+          onOpenLibrary={() => setView('library')}
+          onOpenPerson={openPerson}
+          onPrimaryAction={handleLandingPrimaryAction}
+          onStartCapture={startCapture}
+          onStartDictation={startDictation}
+          onUpdateDraftText={updateDraftText}
+        />
       )}
 
       {view === 'capture' && (
-        <section className="capture-grid">
+        <section className="capture-grid guided-grid">
           <div className="flow-header">
             <button className="ghost-button" type="button" onClick={() => setView('landing')}>
               <ArrowLeft aria-hidden="true" />
@@ -659,9 +692,11 @@ function App() {
             <span>Escribir o dictar</span>
           </div>
 
+          <NarratorStage state={draft.text.trim().length > 0 ? 'listening' : 'prompting'} compact />
+
           <div className="capture-panel">
             <p className="eyebrow">Recuerdo</p>
-            <h1>Contá algo simple</h1>
+            <h1>Contá algo simple, con tus palabras</h1>
             <div className="prompt-row" aria-label="Disparadores de recuerdo">
               {PROMPTS.map((prompt) => (
                 <button
@@ -695,10 +730,10 @@ function App() {
               <span>{draft.text.trim().length} caracteres</span>
             </div>
             <div className="panel-actions">
-              <span className="dictation-note">
+              <button className="secondary-button" type="button" onClick={startDictation}>
                 <Mic2 aria-hidden="true" />
                 Dictado del celular
-              </span>
+              </button>
               <button className="primary-button" type="button" onClick={reviewPeople}>
                 Revisar personas
                 <ArrowRight aria-hidden="true" />
@@ -709,7 +744,7 @@ function App() {
       )}
 
       {view === 'people' && (
-        <section className="people-grid">
+        <section className="people-grid guided-grid">
           <div className="flow-header">
             <button className="ghost-button" type="button" onClick={() => setView('capture')}>
               <ArrowLeft aria-hidden="true" />
@@ -717,6 +752,8 @@ function App() {
             </button>
             <span>Personas</span>
           </div>
+
+          <NarratorStage state="thinking" compact />
 
           <div className="people-panel">
             <div className="panel-heading">
@@ -809,6 +846,108 @@ function App() {
               <button className="secondary-button" type="button" onClick={() => setView('capture')}>
                 Corregir texto
               </button>
+              <button className="primary-button" type="button" onClick={continueToSubject}>
+                De qué trata
+                <ArrowRight aria-hidden="true" />
+              </button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {view === 'subject' && (
+        <section className="subject-grid guided-grid">
+          <div className="flow-header">
+            <button className="ghost-button" type="button" onClick={() => setView('people')}>
+              <ArrowLeft aria-hidden="true" />
+              Personas
+            </button>
+            <span>Tema principal</span>
+          </div>
+
+          <NarratorStage state="thinking" compact />
+
+          <div className="subject-panel">
+            <p className="eyebrow">Tema principal</p>
+            <h1>De qué trata más esta historia?</h1>
+            <p className="panel-lead">
+              Las personas nombradas quedan vinculadas igual. Esto solo ayuda a
+              ubicar la historia en el álbum.
+            </p>
+
+            <div className="subject-options" aria-label="Tema principal de la historia">
+              {selectedPeople.map((person) => (
+                <button
+                  className={
+                    draft.subjectType === 'person' &&
+                    draft.primaryPersonId === person.localId
+                      ? 'subject-option selected'
+                      : 'subject-option'
+                  }
+                  key={person.localId}
+                  type="button"
+                  onClick={() => selectPersonSubject(person.localId)}
+                >
+                  <span className="person-avatar" aria-hidden="true">
+                    {person.displayName.slice(0, 1).toUpperCase()}
+                  </span>
+                  <span>
+                    <strong>{person.displayName}</strong>
+                    <small>Es principalmente sobre esta persona</small>
+                  </span>
+                  {draft.subjectType === 'person' &&
+                    draft.primaryPersonId === person.localId && <Check aria-hidden="true" />}
+                </button>
+              ))}
+
+              {selectedPeople.length > 1 && (
+                <button
+                  className={
+                    draft.subjectType === 'multiple_people'
+                      ? 'subject-option selected'
+                      : 'subject-option'
+                  }
+                  type="button"
+                  onClick={selectMultipleSubject}
+                >
+                  <Users aria-hidden="true" />
+                  <span>
+                    <strong>Varias personas</strong>
+                    <small>La historia vive entre quienes nombraste</small>
+                  </span>
+                  {draft.subjectType === 'multiple_people' && <Check aria-hidden="true" />}
+                </button>
+              )}
+
+              <label
+                className={
+                  draft.subjectType === 'topic'
+                    ? 'subject-option topic-option selected'
+                    : 'subject-option topic-option'
+                }
+              >
+                <Tag aria-hidden="true" />
+                <span>
+                  <strong>Un tema, lugar o costumbre</strong>
+                  <small>Ej: la casa de la abuela, los ñoquis, un viaje</small>
+                </span>
+                <input
+                  autoComplete="off"
+                  name="topic-label"
+                  onChange={(event) => updateTopicSubject(event.target.value)}
+                  onFocus={() => updateTopicSubject(draft.topicLabel)}
+                  placeholder="Nombralo en pocas palabras"
+                  value={draft.topicLabel}
+                />
+              </label>
+            </div>
+
+            {draftError && <p className="field-error" aria-live="polite">{draftError}</p>}
+
+            <div className="panel-actions">
+              <button className="secondary-button" type="button" onClick={() => setView('people')}>
+                Volver
+              </button>
               <button className="primary-button" type="button" onClick={continueToVisibility}>
                 Elegir privacidad
                 <ArrowRight aria-hidden="true" />
@@ -819,18 +958,39 @@ function App() {
       )}
 
       {view === 'visibility' && (
-        <section className="visibility-grid">
+        <section className="visibility-grid guided-grid">
           <div className="flow-header">
-            <button className="ghost-button" type="button" onClick={() => setView('people')}>
+            <button className="ghost-button" type="button" onClick={() => setView('subject')}>
               <ArrowLeft aria-hidden="true" />
-              Personas
+              Tema
             </button>
             <span>Privacidad</span>
           </div>
 
+          <NarratorStage state="privacy" compact />
+
           <div className="visibility-panel">
             <p className="eyebrow">Privacidad</p>
             <h1>Elegí quién puede verla</h1>
+            <button
+              className={
+                draft.isSensitive
+                  ? 'sensitive-toggle selected'
+                  : 'sensitive-toggle'
+              }
+              type="button"
+              onClick={toggleSensitiveMemory}
+            >
+              <ShieldCheck aria-hidden="true" />
+              <span>
+                <strong>Este recuerdo es sensible</strong>
+                <small>
+                  Si lo marcás, Lino te sugiere guardarlo para un círculo más
+                  chico.
+                </small>
+              </span>
+              {draft.isSensitive && <Check aria-hidden="true" />}
+            </button>
             <fieldset className="visibility-options">
               <legend>Visibilidad de la anécdota</legend>
               {VISIBILITY_OPTIONS.map((option) => {
@@ -858,7 +1018,7 @@ function App() {
             </fieldset>
             {draftError && <p className="field-error" aria-live="polite">{draftError}</p>}
             <div className="panel-actions">
-              <button className="secondary-button" type="button" onClick={() => setView('people')}>
+              <button className="secondary-button" type="button" onClick={() => setView('subject')}>
                 Volver
               </button>
               <button className="primary-button" type="button" onClick={saveDraft}>
@@ -871,7 +1031,8 @@ function App() {
       )}
 
       {view === 'saved' && lastSavedStory && (
-        <section className="saved-grid">
+        <section className="saved-grid guided-grid">
+          <NarratorStage state="success" compact />
           <div className="success-panel">
             <div className="success-mark">
               <Check aria-hidden="true" />
@@ -879,6 +1040,7 @@ function App() {
             <p className="eyebrow">Guardada</p>
             <h1>{lastSavedStory.title}</h1>
             <p>{lastSavedStory.text}</p>
+            <ConnectionReveal peopleById={peopleById} story={lastSavedStory} />
             <div className="selected-people">
               {lastSavedStory.personIds.map((personId) => {
                 const person = peopleById.get(personId);
@@ -912,12 +1074,10 @@ function App() {
               </div>
             )}
             <div className="saved-actions">
-              {visibleStories.length > 1 && (
-                <button className="secondary-button" type="button" onClick={() => setView('library')}>
-                  <BookOpen aria-hidden="true" />
-                  Ver anécdotas
-                </button>
-              )}
+              <button className="secondary-button" type="button" onClick={() => setView('library')}>
+                <Archive aria-hidden="true" />
+                Ver álbum familiar
+              </button>
               <button className="secondary-button" type="button" onClick={shareLastSavedStory}>
                 <Share2 aria-hidden="true" />
                 Compartir borrador
@@ -962,6 +1122,250 @@ function App() {
         />
       )}
     </main>
+  );
+}
+
+function LandingExperience({
+  circle,
+  draft,
+  draftError,
+  onFocusStoryInput,
+  onOpenLibrary,
+  onOpenPerson,
+  onPrimaryAction,
+  onStartCapture,
+  onStartDictation,
+  onUpdateDraftText,
+  people,
+  selectedPromptId,
+  textAreaRef,
+}: {
+  circle: PilotCircle;
+  draft: DraftStory;
+  draftError: string;
+  onFocusStoryInput: () => void;
+  onOpenLibrary: () => void;
+  onOpenPerson: (personId: string) => void;
+  onPrimaryAction: () => void;
+  onStartCapture: (promptId?: string) => void;
+  onStartDictation: () => void;
+  onUpdateDraftText: (text: string) => void;
+  people: PilotPerson[];
+  selectedPromptId: string | null;
+  textAreaRef: RefObject<HTMLTextAreaElement | null>;
+}) {
+  const selectedPrompt = selectedPromptId
+    ? PROMPTS.find((prompt) => prompt.id === selectedPromptId)
+    : null;
+  const mapPeople = people.slice(0, 4);
+
+  return (
+    <section className="mockup-home" aria-label={circle.landingTitle}>
+      <nav className="mockup-nav" aria-label="Navegación principal">
+        <button
+          className="round-nav-button"
+          type="button"
+          onClick={onOpenLibrary}
+          aria-label="Abrir álbum familiar"
+        >
+          <Menu aria-hidden="true" />
+        </button>
+        <div className="landing-brand-lockup">
+          <span>Anecdotia</span>
+          <small>{circle.displayName}</small>
+        </div>
+        <button
+          className="round-nav-button"
+          type="button"
+          onClick={onOpenLibrary}
+          aria-label="Ver personas e historias"
+        >
+          <Users aria-hidden="true" />
+        </button>
+      </nav>
+
+      <div className="mockup-hero-scene">
+        <img
+          alt=""
+          aria-hidden="true"
+          className="landing-hero-scene-image"
+          src={landingCollageBoard}
+        />
+      </div>
+
+      <section className="mockup-compose" aria-label="Contar una anécdota">
+        <div className="mockup-title-block">
+          <h1>¿Cuál es la próxima historia?</h1>
+          <p>Puede ser graciosa, rara, tierna o épica</p>
+          <div className="mockup-privacy-line">
+            <Lock aria-hidden="true" />
+            <span>Privado para tu familia. Vos elegís quién la ve.</span>
+          </div>
+        </div>
+
+        <div className="mockup-input-shell">
+          <textarea
+            aria-describedby={draftError ? 'landing-draft-error' : 'landing-draft-hint'}
+            aria-invalid={Boolean(draftError)}
+            aria-label="Escribí o dictá una anécdota"
+            autoComplete="off"
+            id="landing-story-text"
+            name="landing-story-text"
+            onChange={(event) => onUpdateDraftText(event.target.value)}
+            placeholder={
+              selectedPrompt
+                ? selectedPrompt.body
+                : 'Contala acá'
+            }
+            ref={textAreaRef}
+            rows={1}
+            value={draft.text}
+          />
+          <button className="input-mic-button" type="button" onClick={onStartDictation} aria-label="Usar dictado del celular">
+            <Mic2 aria-hidden="true" />
+          </button>
+        </div>
+
+        <div className="mockup-mode-row" aria-label="Modo de captura">
+          <button className="mode-button write-mode" type="button" onClick={onFocusStoryInput}>
+            <PenLine aria-hidden="true" />
+            Escribir
+          </button>
+          <button className="mode-button speak-mode" type="button" onClick={onStartDictation}>
+            <Mic2 aria-hidden="true" />
+            Hablar
+          </button>
+        </div>
+
+        <button className="save-memory-button" type="button" onClick={onPrimaryAction}>
+          <Sparkles aria-hidden="true" />
+          Preparar historia
+        </button>
+
+        <div className="textarea-footer mockup-footer">
+          <span aria-live="polite" id={draftError ? 'landing-draft-error' : 'landing-draft-hint'}>
+            {draftError || 'Después confirmamos personas y privacidad antes de guardarla.'}
+          </span>
+          <span>{draft.text.trim().length} caracteres</span>
+        </div>
+      </section>
+
+      <aside className="mockup-people-map" aria-label="Tu mapa de personas">
+        <img
+          alt=""
+          aria-hidden="true"
+          className="landing-people-strip-image"
+          src={landingPeopleCard}
+        />
+        <div className="people-strip-hotspots" aria-label="Personas del mapa">
+          {mapPeople.map((person, index) => (
+            <button
+              className={`people-strip-hotspot person-${index + 1}`}
+              key={person.localId}
+              type="button"
+              onClick={() => onOpenPerson(person.localId)}
+              aria-label={`Ver recuerdos de ${person.displayName}`}
+            />
+          ))}
+          <button
+            className="people-strip-hotspot add"
+            type="button"
+            onClick={() => onStartCapture('person-memory')}
+            aria-label="Agregar persona o recuerdo"
+          />
+        </div>
+      </aside>
+    </section>
+  );
+}
+
+function NarratorStage({
+  compact = false,
+  state,
+}: {
+  compact?: boolean;
+  state: NarratorState;
+}) {
+  const copy = NARRATOR_COPY[state];
+
+  return (
+    <aside
+      className={compact ? 'narrator-stage compact' : 'narrator-stage'}
+      data-rive-state={state}
+      aria-label={`${copy.eyebrow}: ${copy.title}`}
+    >
+      <div className="lino-figure" aria-hidden="true">
+        <div className="lino-head">
+          <span className="lino-eye left" />
+          <span className="lino-eye right" />
+          <span className="lino-mouth" />
+        </div>
+        <div className="lino-body">
+          <span className="lino-scarf" />
+          <span className="lino-notebook" />
+        </div>
+      </div>
+      <div className="narrator-copy">
+        <p className="eyebrow">{copy.eyebrow}</p>
+        <h2>{copy.title}</h2>
+        <p>{copy.body}</p>
+      </div>
+    </aside>
+  );
+}
+
+function ConnectionReveal({
+  peopleById,
+  story,
+}: {
+  peopleById: Map<string, PilotPerson>;
+  story: PilotStory;
+}) {
+  const primaryPerson = story.primaryPersonId
+    ? peopleById.get(story.primaryPersonId)
+    : null;
+  const mentionedPeople = story.personIds
+    .map((personId) => peopleById.get(personId))
+    .filter((person): person is PilotPerson => Boolean(person));
+
+  const subjectLabel =
+    story.subjectType === 'topic'
+      ? story.topicLabel || 'Tema familiar'
+      : story.subjectType === 'person' && primaryPerson
+        ? primaryPerson.displayName
+        : story.subjectType === 'multiple_people'
+          ? 'Varias personas'
+          : 'Historia familiar';
+
+  return (
+    <div className="connection-reveal" aria-label="Conexión de la historia">
+      <div className="connection-card primary">
+        {story.subjectType === 'topic' ? (
+          <Tag aria-hidden="true" />
+        ) : (
+          <HeartHandshake aria-hidden="true" />
+        )}
+        <span>
+          <strong>{subjectLabel}</strong>
+          <small>tema principal</small>
+        </span>
+      </div>
+      {mentionedPeople.length > 0 && (
+        <div className="connection-thread">
+          <GitBranch aria-hidden="true" />
+          <span>
+            Vinculada con{' '}
+            {mentionedPeople.map((person) => person.displayName).join(', ')}
+          </span>
+        </div>
+      )}
+      {story.isSensitive && (
+        <div className="connection-thread sensitive">
+          <ShieldCheck aria-hidden="true" />
+          <span>Marcada como recuerdo sensible</span>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -1,4 +1,9 @@
-import type { PilotPerson, PilotStory, VisibilityMode } from '../domain/types';
+import type {
+  PilotPerson,
+  PilotStory,
+  StorySubjectType,
+  VisibilityMode,
+} from '../domain/types';
 
 const STORIES_KEY = 'anecdotia:local-stories:v1';
 const PEOPLE_KEY = 'anecdotia:local-people:v1';
@@ -58,11 +63,19 @@ const createTitle = (text: string): string => {
 };
 
 export const saveLocalStory = ({
+  isSensitive,
+  primaryPersonId,
+  subjectType,
   text,
+  topicLabel,
   personIds,
   visibility,
 }: {
+  isSensitive?: boolean;
+  primaryPersonId?: string | null;
+  subjectType?: StorySubjectType | null;
   text: string;
+  topicLabel?: string;
   personIds: string[];
   visibility: VisibilityMode;
 }): PilotStory => {
@@ -74,6 +87,10 @@ export const saveLocalStory = ({
     text: text.trim(),
     personIds,
     visibility,
+    subjectType: subjectType || undefined,
+    primaryPersonId: primaryPersonId || undefined,
+    topicLabel: topicLabel?.trim() || undefined,
+    isSensitive: Boolean(isSensitive),
     sourceLabel: 'Guardada en este dispositivo',
     source: 'local',
     createdAt: new Date().toISOString(),
