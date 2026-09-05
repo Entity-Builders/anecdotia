@@ -8,7 +8,7 @@
   "homepage": "https://anecdotia.entitybuilders.com",
   "repository": {
     "type": "git",
-    "url": "https://github.com/juanobrach/entity-builders.git"
+    "url": "https://github.com/Entity-Builders/anecdotia.git"
   },
   "scripts": {
     "dev": "vite",
@@ -19,9 +19,9 @@
     "deploy:prod": "npm run build -- --mode production && npx wrangler deploy"
   },
   "dependencies": {
-    "@entity-builders/analytics": "1.0.0",
-    "@entity-builders/app-registry": "workspace:*",
-    "@entity-builders/ui-web": "workspace:*",
+    "@entity-builders/analytics": "^1.0.0",
+    "@entity-builders/app-registry": "^0.1.0",
+    "@entity-builders/ui-web": "^0.1.0",
     "lucide-react": "^0.564.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
@@ -35,5 +35,6 @@
     "vite-plugin-pwa": "^1.3.0",
     "vitest": "^2.1.9",
     "wrangler": "^4.90.0"
-  }
+  },
+  "packageManager": "yarn@4.13.0"
 }
