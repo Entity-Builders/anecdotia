@@ -19,9 +19,9 @@
     "deploy:prod": "npm run build -- --mode production && npx wrangler deploy"
   },
   "dependencies": {
-    "@eb-packages/analytics": "1.0.0",
-    "@eb-packages/app-registry": "workspace:*",
-    "@eb-packages/ui-web": "workspace:*",
+    "@entity-builders/analytics": "1.0.0",
+    "@entity-builders/app-registry": "workspace:*",
+    "@entity-builders/ui-web": "workspace:*",
     "lucide-react": "^0.564.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0"
